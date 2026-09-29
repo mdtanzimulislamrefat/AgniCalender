@@ -1,0 +1,7 @@
+.git
+app
+**/__pycache__
+backend/.venv*
+backend/.env
+backend/data/raw
+backend/data/output

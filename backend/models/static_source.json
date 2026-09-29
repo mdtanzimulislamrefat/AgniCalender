@@ -1,0 +1,51 @@
+{
+  "trained_at_utc": "2026-09-29T19:06:57.843784+00:00",
+  "model": "HistGradientBoostingClassifier",
+  "sklearn": "1.9.1",
+  "label": "FIRMS type != 0 (static land source, offshore, volcano) vs 0 (presumed vegetation fire)",
+  "features": [
+    "years_active",
+    "log_detections",
+    "months_active",
+    "night",
+    "log_frp",
+    "frp_missing",
+    "month_sin",
+    "month_cos",
+    "modis",
+    "cell_years_active",
+    "cell_log_detections",
+    "cell_months_active",
+    "cell_monsoon_months"
+  ],
+  "train_years": [
+    2018,
+    2023
+  ],
+  "validation_year": 2024,
+  "test_year": 2025,
+  "rows": {
+    "train": 135285,
+    "validation": 18007,
+    "test": 19797
+  },
+  "positive_rate_test": 0.0274,
+  "threshold": 0.43,
+  "test": {
+    "precision": 0.595,
+    "recall": 0.481,
+    "f1": 0.532,
+    "flagged": 439,
+    "true_positives": 261,
+    "average_precision": 0.629
+  },
+  "baseline": {
+    "rule": "hotspots in >= 4 of the previous 5 years",
+    "precision": 0.029,
+    "recall": 0.772,
+    "f1": 0.056,
+    "flagged": 14554,
+    "true_positives": 419
+  },
+  "note": "Features were chosen on the 2024 validation year. An earlier feature set (first 9 features) was also scored once on 2025 (average precision 0.603) before the cell-level features were added."
+}

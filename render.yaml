@@ -1,0 +1,17 @@
+# Render Blueprint: one free Docker web service. PostgreSQL is external (e.g. Neon).
+services:
+  - type: web
+    name: agnicalendar-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL        # direct (non-pooled) postgresql://… URL with sslmode=require
+        sync: false
+      - key: AUTH_JWT_SECRET
+        generateValue: true
+      - key: FIRMS_MAP_KEY       # free key from https://firms.modaps.eosdis.nasa.gov/api/map_key/
+        sync: false
+      - key: FETCH_EVERY
+        value: 3h

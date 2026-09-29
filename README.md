@@ -1,5 +1,7 @@
 # AgniCalendar workspace
 
+Hosting for free (Neon + Render + UptimeRobot) and building the judge APK: see [DEPLOY.md](DEPLOY.md).
+
 One repository with separate Flutter app and Python backend folders.
 
 ```text

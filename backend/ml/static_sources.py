@@ -15,10 +15,11 @@ import math
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from backend.paths import OUTPUT_DIR
+from backend.paths import BACKEND_DIR
 from backend.storage.reports import connect
 
-MODEL_DIR = OUTPUT_DIR / 'models'
+# Committed with the code so the hosted server serves exactly the evaluated model.
+MODEL_DIR = BACKEND_DIR / 'models'
 MODEL_FILE, METRICS_FILE = MODEL_DIR / 'static_source.joblib', MODEL_DIR / 'static_source.json'
 CELL = 0.005  # degrees, ~550 m; features use the 3x3 neighbourhood (~1.6 km)
 HISTORY_YEARS = 5

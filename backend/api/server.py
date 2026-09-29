@@ -123,6 +123,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=8000)
     parser.add_argument('--host', default='127.0.0.1')
+    parser.add_argument('--behind-proxy', action='store_true',
+                        help='Trust X-Forwarded-For from a hosting proxy (per-client rate limits)')
     parser.add_argument('--fetch-every', default='3h', metavar='INTERVAL',
                         help="Fetch NASA's rolling feeds at startup and then every INTERVAL (e.g. 30m, 3h, 1d) "
                              "while the server runs; 'off' disables it")
@@ -136,7 +138,9 @@ def main():
         jwt_secret()  # Refuse to start without a signing secret.
     except RuntimeError as exc:
         parser.exit(1, f'{exc}\n')
-    uvicorn.run(app, host=args.host, port=args.port)
+    # Behind a host's proxy every request comes from the proxy; use the forwarded client address.
+    proxy = {'proxy_headers': True, 'forwarded_allow_ips': '*'} if args.behind_proxy else {}
+    uvicorn.run(app, host=args.host, port=args.port, **proxy)
 
 
 if __name__ == '__main__':

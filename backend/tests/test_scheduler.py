@@ -136,3 +136,54 @@ class FetchLatestTests(unittest.TestCase):
         self.assertTrue((output / 'report.json').exists())
         with connect() as connection:
             self.assertEqual(connection.execute('SELECT count(*) AS n FROM reports').fetchone()['n'], 3)
+
+
+@unittest.skipUnless(os.environ.get('RUN_POSTGRES_TESTS') == '1', 'Set RUN_POSTGRES_TESTS=1 for real PostgreSQL integration tests')
+class PublishTests(unittest.TestCase):
+    def setUp(self):
+        self.admin_url = database_url()
+        self.names = ['agni_test_' + uuid.uuid4().hex[:12] for _ in range(2)]
+        with psycopg.connect(self.admin_url, autocommit=True) as connection:
+            for name in self.names:
+                connection.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(name)))
+        self.source, self.target = (make_conninfo(self.admin_url, dbname=n) for n in self.names)
+
+    def tearDown(self):
+        with psycopg.connect(self.admin_url, autocommit=True) as connection:
+            for name in self.names:
+                connection.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(name)))
+
+    def test_copies_data_not_accounts_and_keeps_ids_going(self):
+        from backend.processing.archive import import_year
+        from backend.storage.publish import publish
+        from backend.storage.users import create_user
+        from backend.tests.test_archive import archive_csv
+        from backend.tests.test_storage_api import fixture
+        from backend.storage.reports import save_report
+        with patch('backend.storage.reports.database_url', return_value=self.source):
+            migrate()
+            import_year('viirs-snpp', 2024, 'Bangladesh', Path(tempfile.mkdtemp()),
+                        fetch=lambda url: archive_csv({'acq_date': '2024-04-01'}, {'type': '2'}))
+            save_report(fixture())
+            with connect() as connection:
+                create_user(connection, 'source-user@example.com', 'password123')
+                connection.commit()
+        migrate(self.target)
+        with connect(self.target) as connection:
+            create_user(connection, 'hosted-user@example.com', 'password123')
+            connection.commit()
+        counts = publish(self.target, self.source)
+        self.assertEqual(counts['archive_detections'], 2)
+        self.assertEqual(counts['reports'], 1)
+        self.assertEqual(counts['observations'], 2)
+        publish(self.target, self.source)  # repeatable: replaces, never duplicates
+        with connect(self.target) as connection:
+            self.assertEqual(connection.execute('SELECT count(*) AS n FROM archive_detections').fetchone()['n'], 2)
+            emails = [r['email'] for r in connection.execute('SELECT email FROM users')]
+        self.assertEqual(emails, ['hosted-user@example.com'])  # target accounts kept, source accounts not copied
+        with patch('backend.storage.reports.database_url', return_value=self.target):
+            report = fixture()
+            report['generated_at_utc'] = '2026-10-01T00:00:00+00:00'
+            self.assertEqual(save_report(report), 2)  # identity continues after copied ids
+        with self.assertRaises(ValueError):
+            publish(self.source, self.source)
