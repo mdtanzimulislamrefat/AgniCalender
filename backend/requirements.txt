@@ -5,3 +5,4 @@ python-dotenv>=1,<2
 argon2-cffi>=25,<26
 PyJWT>=2.8,<3
 scikit-learn>=1.5,<2
+psycopg-pool>=3.2,<4

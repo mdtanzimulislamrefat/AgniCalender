@@ -1,6 +1,7 @@
 """FastAPI service for AgniCalendar. Run from the repository root."""
 import argparse
 import asyncio
+import logging
 from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
@@ -13,20 +14,31 @@ from fastapi.responses import JSONResponse
 import uvicorn
 
 from backend.api import account, archive, auth, hotspots
-from backend.api.database import Connection, get_connection  # noqa: F401 - tests override get_connection
+from backend.api.database import Connection, close_pool, enable_pool, get_connection  # noqa: F401 - tests override get_connection
 from backend.api.models import Calendar, ObservationPage, Summary
 from backend.api.params import BBox, parse_bbox
 from backend.api.scheduler import FetchScheduler, parse_interval
 from backend.config import jwt_secret
+from backend.ml.static_sources import classifier
 from backend.storage.reports import get_report, observation_page
+
+def warm_classifier():
+    try:
+        classifier()
+    except Exception as exc:  # the map still works without flags
+        logging.getLogger('uvicorn.error').warning('Classifier not loaded (%s)', type(exc).__name__)
+
 
 @asynccontextmanager
 async def lifespan(app):
     scheduler = app.state.scheduler
     task = asyncio.create_task(scheduler.loop()) if scheduler and scheduler.interval else None
+    if scheduler:  # real server only: load the classifier now, not during a user's first request
+        asyncio.create_task(asyncio.to_thread(warm_classifier))
     yield
     if task:
         task.cancel()
+    close_pool()
 
 
 app = FastAPI(title='AgniCalendar API', version='1.0.0', lifespan=lifespan,
@@ -134,6 +146,7 @@ def main():
     except ValueError as exc:
         parser.error(f'--fetch-every: {exc}')
     app.state.scheduler = FetchScheduler(interval)
+    enable_pool()  # reuse database connections across requests
     try:
         jwt_secret()  # Refuse to start without a signing secret.
     except RuntimeError as exc:

@@ -187,3 +187,42 @@ class PublishTests(unittest.TestCase):
             self.assertEqual(save_report(report), 2)  # identity continues after copied ids
         with self.assertRaises(ValueError):
             publish(self.source, self.source)
+
+
+class CacheTests(unittest.TestCase):
+    def setUp(self):
+        from backend.api import cache
+        self.cache = cache
+        cache.clear()
+        self.addCleanup(cache.clear)
+
+    def test_hit_expiry_and_prefix_clear(self):
+        from pydantic import BaseModel
+
+        class Body(BaseModel):
+            n: int
+        calls = []
+
+        def produce():
+            calls.append(1)
+            return {'n': len(calls)}
+        first = self.cache.cached_json(('recent', '7d'), 60, produce, Body)
+        second = self.cache.cached_json(('recent', '7d'), 60, produce, Body)
+        self.assertEqual((first.body, second.body, len(calls)), (b'{"n":1}', b'{"n":1}', 1))
+        self.cache.cached_json(('archive', 'x'), 60, produce, Body)
+        self.cache.clear('recent')
+        self.assertEqual(self.cache.cached_json(('recent', '7d'), 60, produce, Body).body, b'{"n":3}')
+        self.assertEqual(self.cache.cached_json(('archive', 'x'), 60, produce, Body).body, b'{"n":2}')
+        self.assertEqual(self.cache.cached_json(('short',), 0, produce, Body).body, b'{"n":4}')
+        self.assertEqual(self.cache.cached_json(('short',), 0, produce, Body).body, b'{"n":5}')  # expired
+
+    def test_scheduler_clears_recent_after_new_data(self):
+        from pydantic import BaseModel
+
+        class Body(BaseModel):
+            n: int
+        self.cache.cached_json(('recent', '7d'), 600, lambda: {'n': 1}, Body)
+        scheduler = FetchScheduler(timedelta(hours=3),
+                                   fetch=lambda: {'status': 'unchanged', 'recent': {'status': 'ok'}})
+        asyncio.run(scheduler.run_once())
+        self.assertEqual(self.cache.cached_json(('recent', '7d'), 600, lambda: {'n': 2}, Body).body, b'{"n":2}')

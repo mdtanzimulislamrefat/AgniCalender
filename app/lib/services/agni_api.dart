@@ -49,6 +49,28 @@ class AgniApi {
   VoidCallback? onSessionExpired;
   String? _access;
   String? _refresh;
+
+  /// In-memory results for this session: archive data never changes while the
+  /// app runs, recent windows are kept briefly. Refresh clears it.
+  final _memo = <String, (DateTime, Object)>{};
+  static const _recentTtl = Duration(minutes: 10);
+
+  Future<T> _remember<T extends Object>(
+    String key,
+    Duration? ttl,
+    Future<T> Function() load,
+  ) async {
+    final hit = _memo[key];
+    if (hit != null && (ttl == null || DateTime.now().isBefore(hit.$1))) {
+      return hit.$2 as T;
+    }
+    final value = await load();
+    _memo[key] = (DateTime.now().add(ttl ?? Duration.zero), value);
+    return value;
+  }
+
+  /// Forget remembered results so the next calls ask the server again.
+  void clearMemory() => _memo.clear();
   Future<bool>? _renewing;
   static const _timeout = Duration(seconds: 15);
   String get cacheKey => 'agni_snapshot_v1_$baseUrl';
@@ -132,6 +154,7 @@ class AgniApi {
   }
 
   Future<void> _clearSession() async {
+    _memo.clear();
     final id = user.value?['id'];
     _access = _refresh = null;
     user.value = null;
@@ -288,6 +311,15 @@ class AgniApi {
   /// Multi-year monthly hotspot counts (whole region, or inside [bbox]). The
   /// whole-region result is kept on the device for offline use.
   Future<({Json season, bool offline})> season({List<double>? bbox}) async {
+    final key = 'season:${bbox?.join(',')}';
+    final hit = _memo[key];
+    if (hit != null) return (season: hit.$2 as Json, offline: false);
+    final result = await _loadSeason(bbox);
+    if (!result.offline) _memo[key] = (DateTime.now(), result.season);
+    return result;
+  }
+
+  Future<({Json season, bool offline})> _loadSeason(List<double>? bbox) async {
     try {
       final season = await _get('/v1/archive/season', {
         if (bbox != null) 'bbox': bbox.join(','),
@@ -313,11 +345,15 @@ class AgniApi {
   }
 
   /// Map points for a recent window ('7d', '30d') or an archive month ('YYYY-MM').
-  Future<Json> hotspots({String? window, String? month}) =>
-      _get('/v1/map/hotspots', {'window': ?window, 'month': ?month});
+  Future<Json> hotspots({String? window, String? month}) => _remember(
+    'map:$window:$month',
+    month != null ? null : _recentTtl,
+    () => _get('/v1/map/hotspots', {'window': ?window, 'month': ?month}),
+  );
 
   /// Archive months with data and the recent-days range.
-  Future<Json> mapAvailable() => _get('/v1/map/available');
+  Future<Json> mapAvailable() =>
+      _remember('map:available', _recentTtl, () => _get('/v1/map/available'));
 
   Future<Json> createArea(String name, List<double> bbox) async {
     final response = await _send(
@@ -344,18 +380,26 @@ class AgniApi {
   Future<Snapshot> fetch() async {
     final summary = await _get('/v1/summary');
     final id = summary['report_id'].toString();
-    final calendar = await _get('/v1/calendar', {'report_id': id});
+    Future<Json> pageAt(int offset) => _get('/v1/observations', {
+      'report_id': id,
+      'offset': '$offset',
+      'limit': '1000',
+    });
+    // The calendar and the first page do not depend on each other: ask in parallel.
+    final first = await Future.wait([
+      _get('/v1/calendar', {'report_id': id}),
+      pageAt(0),
+    ]);
+    final calendar = first[0];
     if (calendar['report_id'].toString() != id) {
       throw const FormatException('Snapshot mismatch');
     }
     final points = <Json>[];
     int? expectedTotal;
+    Json? next = first[1];
     do {
-      final page = await _get('/v1/observations', {
-        'report_id': id,
-        'offset': '${points.length}',
-        'limit': '1000',
-      });
+      final page = next ?? await pageAt(points.length);
+      next = null;
       if (page['report_id'].toString() != id) {
         throw const FormatException('Snapshot mismatch');
       }

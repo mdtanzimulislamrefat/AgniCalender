@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from backend.api.auth import current_user
+from backend.api.cache import cached_json
 from backend.api.database import Connection
 from backend.api.params import BBox, parse_bbox
 from backend.storage.archive import season
@@ -53,7 +54,12 @@ def burning_season(connection: Connection, bbox: BBox = None,
                        description='vegetation = FIRMS type 0 only; all = every type')] = 'vegetation',
                    region: Annotated[str, Query(max_length=80)] = 'Bangladesh'):
     """Monthly hotspot counts per satellite product: every year, plus mean/median/min/max over complete years."""
-    result = season(connection, region, (0,) if types == 'vegetation' else (0, 1, 2, 3), parse_bbox(bbox))
-    if not result['products']:
-        raise HTTPException(503, 'No archive imported. Run: python -m backend.processing.archive')
-    return result
+    box = parse_bbox(bbox)
+
+    def produce():
+        result = season(connection, region, (0,) if types == 'vegetation' else (0, 1, 2, 3), box)
+        if not result['products']:
+            raise HTTPException(503, 'No archive imported. Run: python -m backend.processing.archive')
+        return result
+    # The archive changes only on imports; an hour-old copy is fine.
+    return cached_json(('archive', 'season', region, types, box), 3600, produce, Season)

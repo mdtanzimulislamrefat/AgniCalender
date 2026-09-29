@@ -12,6 +12,7 @@ import joblib
 from fastapi.testclient import TestClient
 
 from backend.api import hotspots as hotspots_api
+from backend.api import cache
 from backend.api.auth import create_access
 from backend.api.server import app, get_connection
 from backend.ml import static_sources as ml
@@ -99,6 +100,7 @@ class TrainingTests(unittest.TestCase):
 
 class ApiTests(unittest.TestCase):
     def setUp(self):
+        cache.clear()
         app.dependency_overrides[get_connection] = lambda: None
         self.addCleanup(app.dependency_overrides.clear)
         self.client = TestClient(app)

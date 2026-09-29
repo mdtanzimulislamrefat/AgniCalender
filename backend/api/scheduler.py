@@ -4,6 +4,7 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 
+from backend.api import cache
 from backend.processing.recent import refresh_all
 
 log = logging.getLogger('uvicorn.error')
@@ -50,6 +51,8 @@ class FetchScheduler:
             detail = f" #{outcome['report_id']}, {outcome['counts']['retained']} hotspots" if result == 'new_report' else ''
             recent = outcome.get('recent', {}).get('status')
             self.status['recent_result'] = recent
+            if recent == 'ok':
+                cache.clear('recent')  # serve the new days, not a cached window
             log.info('NASA fetch: %s%s; recent days: %s', result, detail, recent)
         self.status.update(last_run_utc=started.isoformat(), last_result=result)
         return result != 'failed'

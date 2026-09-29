@@ -13,6 +13,7 @@ from psycopg import sql
 from psycopg.conninfo import make_conninfo
 from fastapi.testclient import TestClient
 
+from backend.api import cache
 from backend.api.auth import create_access
 from backend.api.server import app
 from backend.config import database_url
@@ -92,6 +93,7 @@ class RecentPostgresTests(unittest.TestCase):
             connection.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(cls.name)))
 
     def setUp(self):
+        cache.clear()
         with connect() as connection:
             connection.execute('TRUNCATE recent_detections, recent_coverage, archive_detections, archive_files '
                                'RESTART IDENTITY CASCADE')

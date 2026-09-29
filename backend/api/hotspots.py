@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from backend.api.auth import current_user
+from backend.api.cache import cached_json
 from backend.api.database import Connection
 from backend.config import firms_map_key
 from backend.ml.static_sources import classifier
@@ -78,20 +79,26 @@ def map_hotspots(connection: Connection,
     if (window is None) == (month is None):
         raise HTTPException(422, 'Give exactly one of window or month')
     if window is not None:
-        result = hotspots.recent(connection, WINDOWS[window])
-        # NRT data lacks NASA's fire type; flag likely industrial sources with the archive-trained model.
-        model = classifier()
-        if model is not None:
-            result['points'] = model.annotate([dict(p) for p in result['points']])
-            result['classifier'] = model.summary()
-        return result
+        def produce():
+            result = hotspots.recent(connection, WINDOWS[window])
+            # NRT data lacks NASA's fire type; flag likely industrial sources with the archive-trained model.
+            model = classifier()
+            if model is not None:
+                result['points'] = model.annotate([dict(p) for p in result['points']])
+                result['classifier'] = model.summary()
+            return result
+        # Cleared by the scheduler whenever new NASA data arrives.
+        return cached_json(('recent', window), 600, produce, Hotspots)
     match = re.fullmatch(r'(\d{4})-(\d{2})', month)
     if not match or not 1 <= int(match[2]) <= 12:
         raise HTTPException(422, 'month must be YYYY-MM')
-    return hotspots.archive_month(connection, int(match[1]), int(match[2]))
+    return cached_json(('archive', 'month', month), 3600,
+                       lambda: hotspots.archive_month(connection, int(match[1]), int(match[2])), Hotspots)
 
 
 @router.get('/available', response_model=Available)
 def map_available(connection: Connection):
     """Archive months with data, and the recent-days range."""
-    return {'recent_enabled': firms_map_key() is not None} | hotspots.available(connection)
+    return cached_json(('recent', 'available'), 600,
+                       lambda: {'recent_enabled': firms_map_key() is not None} | hotspots.available(connection),
+                       Available)

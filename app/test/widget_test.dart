@@ -801,6 +801,11 @@ void main() {
       final service = await signedIn(server);
       expect((await service.season()).offline, isFalse);
       server.down = true;
+      expect(
+        (await service.season()).offline,
+        isFalse,
+      ); // remembered this session
+      service.clearMemory(); // e.g. Refresh or a new app start
       final offline = await service.season();
       expect(offline.offline, isTrue);
       expect(offline.season['region'], 'Bangladesh');
@@ -836,6 +841,34 @@ void main() {
       await tester.scrollUntilVisible(find.text('Peak: Apr'), 200);
       expect(find.text('Burning season here'), findsOneWidget);
       expect(server.seasonQueries, ['91.5,21.5,92.5,23.5']);
+    });
+
+    testWidgets('switching tabs does not reload; Refresh does', (tester) async {
+      final server = FakeServer();
+      final service = await signedIn(server);
+      await tester.pumpWidget(AgniApp(api: service));
+      await tester.pumpAndSettle();
+      int count(String path) =>
+          server.calls.where((c) => c.endsWith(path)).length;
+      expect(
+        count('/v1/archive/season'),
+        1,
+      ); // loaded once, behind the Overview
+      await tester.tap(find.text('Map'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('7 days'));
+      await tester.pumpAndSettle();
+      for (final tab in ['Calendar', 'Overview', 'Map', 'Calendar', 'Map']) {
+        await tester.tap(find.text(tab));
+        await tester.pumpAndSettle();
+      }
+      expect(count('/v1/archive/season'), 1);
+      expect(count('/v1/map/hotspots'), 1);
+      expect(find.textContaining('last 7 days'), findsOneWidget); // window kept
+      await tester.tap(find.byTooltip('Refresh data'));
+      await tester.pumpAndSettle();
+      expect(count('/v1/archive/season'), 2);
+      expect(count('/v1/summary'), 2);
     });
 
     test('axis ticks and numbers are clean', () {

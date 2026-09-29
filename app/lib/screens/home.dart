@@ -44,19 +44,22 @@ class _AgniHomeState extends State<AgniHome> {
     ),
   );
 
-  Future<void> load() async {
+  /// Bumped by Refresh so the map and season reload instead of showing remembered results.
+  int generation = 0;
+
+  Future<void> load({bool refresh = false}) async {
     if (busy) return;
+    if (refresh) api.clearMemory();
     setState(() {
       busy = true;
       message = null;
+      if (refresh) generation++;
     });
     if (data == null) {
       final cached = await api.cached();
       if (!mounted) return;
-      setState(() {
-        data = cached;
-        offline = cached != null;
-      });
+      // Show the saved snapshot at once; it is only called "offline" if the refresh fails.
+      setState(() => data = cached);
     }
     try {
       final fresh = await api.fetch();
@@ -123,7 +126,7 @@ class _AgniHomeState extends State<AgniHome> {
       backgroundColor: Colors.transparent,
       actions: [
         IconButton(
-          onPressed: busy ? null : load,
+          onPressed: busy ? null : () => load(refresh: true),
           tooltip: 'Refresh data',
           icon: const Icon(Icons.refresh),
         ),
@@ -174,11 +177,19 @@ class _AgniHomeState extends State<AgniHome> {
                             label: const Text('Retry'),
                           ),
                   )
-                : switch (tab) {
-                    1 => HotspotMap(api: api, snapshot: data!),
-                    2 => calendar(),
-                    _ => overview(),
-                  },
+                // Keep every tab alive so switching never reloads a map window or the season.
+                : IndexedStack(
+                    index: tab,
+                    children: [
+                      overview(),
+                      HotspotMap(
+                        key: ValueKey('map-$generation'),
+                        api: api,
+                        snapshot: data!,
+                      ),
+                      calendar(),
+                    ],
+                  ),
           ),
         ],
       ),
@@ -262,9 +273,12 @@ class _AgniHomeState extends State<AgniHome> {
       children: [
         calendarSwitch(),
         const SizedBox(height: 12),
-        if (!recentWeeks)
-          SeasonView(api: api)
-        else ...[
+        Visibility(
+          visible: !recentWeeks,
+          maintainState: true,
+          child: SeasonView(key: ValueKey('season-$generation'), api: api),
+        ),
+        if (recentWeeks) ...[
           heading(
             'Weekly hotspots',
             InfoButton(

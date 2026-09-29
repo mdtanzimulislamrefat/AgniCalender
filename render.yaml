@@ -4,6 +4,7 @@ services:
     name: agnicalendar-api
     runtime: docker
     plan: free
+    region: singapore        # next to the Neon database; cross-ocean round trips cost ~1.5 s per request
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     envVars:

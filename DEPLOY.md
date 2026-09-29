@@ -11,8 +11,9 @@ git push -u origin main
 
 ## 2. Database (Neon)
 1. Sign up at https://neon.tech and create a project (PostgreSQL 17, a region near Bangladesh such as Singapore).
-2. Copy the **direct** connection string (turn *Connection pooling* **off**; the pooled one rejects the server's session settings). It looks like `postgresql://user:password@ep-….aws.neon.tech/neondb?sslmode=require`.
-3. Copy your local NASA data into it (accounts are **not** copied). Run this from the repository root with the local database running:
+2. Keep Render and Neon in the **same region** (Singapore for both). Across oceans every request waits ~1.5 s for database round trips.
+3. Copy the **direct** connection string (turn *Connection pooling* **off**; the pooled one rejects the server's session settings). It looks like `postgresql://user:password@ep-….aws.neon.tech/neondb?sslmode=require`.
+4. Copy your local NASA data into it (accounts are **not** copied). Run this from the repository root with the local database running:
    ```bash
    source backend/.venv-flutter/bin/activate
    read -rs PUBLISH_DATABASE_URL && export PUBLISH_DATABASE_URL   # paste the Neon URL, press Enter
