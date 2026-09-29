@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from backend.api.auth import current_user
 from backend.api.cache import cached_json
-from backend.api.database import Connection
+from backend.api import database
 from backend.api.params import BBox, parse_bbox
 from backend.storage.archive import season
 
@@ -49,15 +49,16 @@ class Season(BaseModel):
 
 
 @router.get('/season', response_model=Season)
-def burning_season(connection: Connection, bbox: BBox = None,
+def burning_season(bbox: BBox = None,
                    types: Annotated[Literal['vegetation', 'all'], Query(
                        description='vegetation = FIRMS type 0 only; all = every type')] = 'vegetation',
                    region: Annotated[str, Query(max_length=80)] = 'Bangladesh'):
     """Monthly hotspot counts per satellite product: every year, plus mean/median/min/max over complete years."""
     box = parse_bbox(bbox)
 
-    def produce():
-        result = season(connection, region, (0,) if types == 'vegetation' else (0, 1, 2, 3), box)
+    def produce():  # only a cache miss touches the database
+        with database.connection() as connection:
+            result = season(connection, region, (0,) if types == 'vegetation' else (0, 1, 2, 3), box)
         if not result['products']:
             raise HTTPException(503, 'No archive imported. Run: python -m backend.processing.archive')
         return result

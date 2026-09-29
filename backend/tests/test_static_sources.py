@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import random
@@ -102,6 +103,10 @@ class ApiTests(unittest.TestCase):
     def setUp(self):
         cache.clear()
         app.dependency_overrides[get_connection] = lambda: None
+        # Cached endpoints open their own connection on a miss; no database is needed here.
+        patcher = patch('backend.api.database.connection', lambda: contextlib.nullcontext(None))
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.addCleanup(app.dependency_overrides.clear)
         self.client = TestClient(app)
         self.headers = {'Authorization': 'Bearer ' + create_access(1)}

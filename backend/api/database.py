@@ -3,6 +3,7 @@
 The server enables a connection pool (enable_pool) so requests reuse open connections instead of
 paying TCP, TLS and authentication on every call; tests and CLI tools connect per request.
 """
+from contextlib import contextmanager
 from typing import Annotated
 
 import psycopg
@@ -31,6 +32,17 @@ def close_pool():
     if _pool is not None:
         _pool.close()
         _pool = None
+
+
+@contextmanager
+def connection():
+    """A pooled (or direct) connection for code that only sometimes needs the database."""
+    if _pool is not None:
+        with _pool.connection() as conn:
+            yield conn
+    else:
+        with reports.connect() as conn:
+            yield conn
 
 
 def get_connection():
